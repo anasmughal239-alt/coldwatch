@@ -10,7 +10,7 @@
  * per domain) — not a rewrite.
  */
 
-import type { DomainReport } from "../../src/index.js";
+import type { CheckResult, DomainReport } from "../../src/index.js";
 import type { Resolver } from "../../src/index.js";
 import {
   nextCheckAt,
@@ -36,6 +36,22 @@ export interface SchedulerDeps {
   maxDkimProbes: number;
   jitterFraction: number;
   makeResolver?: () => Resolver;
+  /**
+   * Optional blacklist stage. Given the SPF ip4/ip6 terms just observed, it
+   * persists sending-IP evidence and returns a `blacklist` CheckResult (or
+   * null to skip, e.g. no DQS key configured).
+   */
+  blacklist?: (args: {
+    domainId: number;
+    domain: string;
+    spfIpTerms: string[];
+  }) => Promise<CheckResult | null>;
+  /** Recompute score/grade/readiness once the check set may include blacklist. */
+  rescore?: (checks: CheckResult[]) => {
+    score: number;
+    grade: string;
+    readiness: string;
+  };
 }
 
 export interface SchedulerRunSummary {
@@ -80,11 +96,25 @@ export async function runDueChecks(
         maxDkimProbes: deps.maxDkimProbes,
       });
 
+      let checks: CheckResult[] = report.checks;
+      if (deps.blacklist) {
+        const bl = await deps.blacklist({
+          domainId: d.id,
+          domain: d.domain,
+          spfIpTerms: extractSpfIpTerms(report),
+        });
+        if (bl) checks = [...checks, bl];
+      }
+
+      const scored = deps.rescore
+        ? deps.rescore(checks)
+        : { score: report.score, grade: report.grade, readiness: report.readiness };
+
       const prev = await deps.store.getStates(d.id);
       const observedAt = report.checkedAt;
       const finishedAt = deps.now().toISOString();
 
-      const results: ResultRow[] = report.checks.map((c) => ({
+      const results: ResultRow[] = checks.map((c) => ({
         checkType: c.check,
         status: c.status as Status,
         findings: JSON.stringify(c.findings),
@@ -92,10 +122,10 @@ export async function runDueChecks(
         observedAt,
       }));
 
-      const states: StateWrite[] = report.checks.map((c) => {
+      const states: StateWrite[] = checks.map((c) => {
         const { row } = nextState(prev.get(c.check), {
           status: c.status as Status,
-          score: report.score,
+          score: scored.score,
           observedAt,
         });
         return { checkType: c.check, row, lastRunId: runId, updatedAt: finishedAt };
@@ -105,10 +135,10 @@ export async function runDueChecks(
         runId,
         domainId: d.id,
         summary: {
-          status: worstStatus(report.checks.map((c) => c.status as Status)),
-          score: report.score,
-          grade: report.grade,
-          readiness: report.readiness,
+          status: worstStatus(checks.map((c) => c.status as Status)),
+          score: scored.score,
+          grade: scored.grade,
+          readiness: scored.readiness,
           error: null,
           finishedAt,
         },
@@ -117,28 +147,52 @@ export async function runDueChecks(
       });
       summary.checked++;
     } catch (err) {
-      await deps.store.commitRun({
-        runId,
-        domainId: d.id,
-        summary: {
-          status: "unknown",
-          score: null,
-          grade: null,
-          readiness: null,
-          error: err instanceof Error ? err.message : String(err),
-          finishedAt: deps.now().toISOString(),
-        },
-        results: [],
-        states: [],
-      });
+      console.error(
+        `scheduler: ${d.domain} run ${runId} failed:`,
+        err instanceof Error ? (err.stack ?? err.message) : String(err),
+      );
+      try {
+        await deps.store.commitRun({
+          runId,
+          domainId: d.id,
+          summary: {
+            status: "unknown",
+            score: null,
+            grade: null,
+            readiness: null,
+            error: err instanceof Error ? err.message : String(err),
+            finishedAt: deps.now().toISOString(),
+          },
+          results: [],
+          states: [],
+        });
+      } catch (commitErr) {
+        console.error(
+          `scheduler: ${d.domain} run ${runId} could not record failure:`,
+          commitErr instanceof Error ? commitErr.message : String(commitErr),
+        );
+      }
       summary.errors++;
     }
 
-    await deps.store.reschedule(
-      d.id,
-      nextCheckAt(now, interval, deps.jitterFraction),
-    );
+    try {
+      await deps.store.reschedule(
+        d.id,
+        nextCheckAt(now, interval, deps.jitterFraction),
+      );
+    } catch (err) {
+      console.error(
+        `scheduler: could not reschedule ${d.domain}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
   }
 
   return summary;
+}
+
+function extractSpfIpTerms(report: DomainReport): string[] {
+  const spf = report.checks.find((c) => c.check === "spf");
+  const terms = (spf?.data as { ipTerms?: unknown } | undefined)?.ipTerms;
+  return Array.isArray(terms) ? terms.filter((t): t is string => typeof t === "string") : [];
 }

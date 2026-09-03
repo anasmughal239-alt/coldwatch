@@ -57,6 +57,24 @@ export async function handleAdmin(
     return json(await store.getHistory(domain, limit));
   }
 
+  // /api/domains/:domain/ips  — replace the manual sending-IP list
+  if (sub === "ips") {
+    if (req.method !== "PUT") return json({ error: "method not allowed" }, 405);
+    const id = await store.getDomainId(domain);
+    if (id === null) return json({ error: "not found" }, 404);
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: "invalid JSON body" }, 400);
+    }
+    const raw = (body as { ips?: unknown }).ips;
+    if (!Array.isArray(raw)) return json({ error: "`ips` must be an array" }, 400);
+    const ips = raw.map(String).map((s) => s.trim()).filter(Boolean).slice(0, 100);
+    await store.setManualSendingIps(id, ips, new Date().toISOString());
+    return json({ domain, manualIps: ips });
+  }
+
   // /api/domains/:domain
   if (sub === null) {
     if (req.method === "GET") {
@@ -88,6 +106,9 @@ async function addDomain(req: Request, store: D1Store): Promise<Response> {
   const dkimSelectors = Array.isArray(b.dkimSelectors)
     ? b.dkimSelectors.map(String).filter(Boolean).slice(0, 20)
     : undefined;
+  const sendingIps = Array.isArray(b.sendingIps)
+    ? b.sendingIps.map(String).map((s) => s.trim()).filter(Boolean).slice(0, 100)
+    : undefined;
   const checkIntervalSeconds =
     b.checkIntervalSeconds !== undefined
       ? clampInt(String(b.checkIntervalSeconds), 21600, 900, 604800)
@@ -99,6 +120,7 @@ async function addDomain(req: Request, store: D1Store): Promise<Response> {
       domain,
       ...(label !== undefined ? { label } : {}),
       ...(dkimSelectors ? { dkimSelectors } : {}),
+      ...(sendingIps ? { sendingIps } : {}),
       ...(checkIntervalSeconds !== undefined ? { checkIntervalSeconds } : {}),
     },
     new Date().toISOString(),

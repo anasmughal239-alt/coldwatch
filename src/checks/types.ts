@@ -6,7 +6,7 @@
 
 export type Severity = "ok" | "info" | "warn" | "crit" | "unknown";
 
-export type CheckType = "spf" | "dmarc" | "dkim" | "mx";
+export type CheckType = "spf" | "dmarc" | "dkim" | "mx" | "blacklist";
 
 export interface Finding {
   /** Stable machine-readable code, e.g. "spf.too_many_lookups". */

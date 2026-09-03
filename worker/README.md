@@ -109,3 +109,44 @@ sub-invocation per domain) — a config change, not a rewrite.
 `domain` → `check_run` (one per time-slot, `UNIQUE(domain_id, slot_ts)` =
 idempotency) → `check_result` (append-only) · `domain_check_state` (current
 status per check, `since` / `consecutive_count` feed M4 alerting).
+
+---
+
+## M3 — blacklist checks (Spamhaus DQS)
+
+When `DQS_KEY` is set, the scheduler adds a `blacklist` check: the domain
+against Spamhaus **DBL**, and its known sending IPs against **ZEN**.
+
+```
+npx wrangler secret put DQS_KEY        # free Spamhaus Data Query Service key
+```
+
+Verify the key works first — this must return `127.0.0.2`, not REFUSED:
+
+```
+nslookup -type=A <key>.2.0.0.127.zen.dq.spamhaus.net
+```
+
+### How the shared free key is protected
+
+One key serves every domain, so every lookup passes through a metering gateway:
+
+- **Cache** (`dnsbl_cache`, keyed by `zone`+`entity`) — "not listed" cached 12h,
+  "listed" 2h. Because IPs are shared across domains this is also the dedup
+  layer.
+- **Daily budget** (`dqs_budget`) — atomic reserve against `DQS_DAILY_CEILING`
+  (default 200k, below the real free-tier limit). Over budget ⇒ the check
+  reports `unknown`, never a false "clean".
+- **Circuit breaker** — a `127.255.255.x` reply (bad key / quota) or repeated
+  DQS errors trips it for the rest of the run; remaining lookups short-circuit
+  to `unknown`.
+- **Per-domain IP cap** — at most 12 sending IPs checked per domain,
+  manual-entered before SPF-derived.
+
+### Sending IPs
+
+- Discovered automatically from `ip4:` / `ip6:` literals in the SPF record.
+- Set explicitly: `sendingIps` in `POST /api/domains`, or
+  `PUT /api/domains/:domain/ips` with `{ "ips": ["203.0.113.10", ...] }`.
+- Without `DQS_KEY` the scheduler simply runs the DNS-auth checks and skips this
+  stage.

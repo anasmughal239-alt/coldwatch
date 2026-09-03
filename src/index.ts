@@ -22,6 +22,7 @@ export type {
   Severity,
   CheckType,
 } from "./checks/types.js";
+export { result, rollup } from "./checks/types.js";
 export { scoreReport } from "./score.js";
 export type { ScoredReport, Readiness } from "./score.js";
 

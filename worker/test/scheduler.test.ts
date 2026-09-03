@@ -6,6 +6,7 @@ import type {
   ResultRow,
   RunSummary,
   SchedulerStore,
+  SendingIpRow,
   StateWrite,
 } from "../src/store.js";
 import type { StateRow } from "../src/state.js";
@@ -43,6 +44,19 @@ class FakeStore implements SchedulerStore {
   }
   async reschedule(id: number, next: string): Promise<void> {
     this.reschedules.push({ id, next });
+  }
+  sendingIps = new Map<number, SendingIpRow[]>();
+  async getSendingIps(domainId: number): Promise<SendingIpRow[]> {
+    return this.sendingIps.get(domainId) ?? [];
+  }
+  async upsertSendingIps(
+    domainId: number,
+    ips: string[],
+    source: string,
+  ): Promise<void> {
+    const cur = this.sendingIps.get(domainId) ?? [];
+    for (const ip of ips) if (!cur.some((r) => r.ip === ip)) cur.push({ ip, source });
+    this.sendingIps.set(domainId, cur);
   }
 }
 
@@ -142,6 +156,27 @@ describe("runDueChecks", () => {
     });
     expect(store.committed[0]!.results).toHaveLength(0);
     expect(store.reschedules).toHaveLength(1);
+  });
+
+  it("composes the blacklist stage and rescoring into the run", async () => {
+    const store = new FakeStore();
+    store.due = [{ id: 1, domain: "acme.com", dkimSelectors: [], checkIntervalSeconds: 21600 }];
+
+    const d = deps(store, async (x) => report(x));
+    d.blacklist = async () => ({
+      check: "blacklist",
+      status: "crit",
+      findings: [{ code: "blacklist.domain_listed", severity: "crit", title: "listed" }],
+      data: {},
+    });
+    d.rescore = () => ({ score: 30, grade: "F", readiness: "not-ready" });
+
+    await runDueChecks(d);
+
+    const c = store.committed[0]!;
+    expect(c.results.map((r) => r.checkType)).toContain("blacklist");
+    expect(c.states.map((s) => s.checkType)).toContain("blacklist");
+    expect(c.summary).toMatchObject({ status: "crit", score: 30, grade: "F", readiness: "not-ready" });
   });
 
   it("computes a state transition against the previous state", async () => {

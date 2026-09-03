@@ -11,9 +11,12 @@
  * don't re-run ~30 DNS lookups. Nothing about a visitor is stored.
  */
 
-import { checkDomain, DohResolver } from "../../src/index.js";
+import { checkDomain, DohResolver, scoreReport } from "../../src/index.js";
 import type { DomainReport } from "../../src/index.js";
 import { handleAdmin } from "./admin.js";
+import { evaluateBlacklist } from "./checks/blacklist.js";
+import { isIndividualIp } from "./dnsbl.js";
+import { DqsClient } from "./dqs.js";
 import { renderPage } from "./page.js";
 import { renderReport } from "./render.js";
 import { runDueChecks } from "./scheduler.js";
@@ -26,6 +29,8 @@ interface Env {
   DB?: D1Database;
   CW_ADMIN_TOKEN?: string;
   CRON_BATCH_LIMIT?: string;
+  DQS_KEY?: string;
+  DQS_DAILY_CEILING?: string;
 }
 
 const CACHE_TTL = 3600; // seconds
@@ -77,14 +82,57 @@ export default {
       console.warn("scheduled: DB not bound, nothing to do");
       return;
     }
+
+    const store = new D1Store(env.DB);
+
+    // One DqsClient for the whole run so its cache and circuit breaker persist
+    // across domains.
+    const dqs = env.DQS_KEY
+      ? new DqsClient({
+          key: env.DQS_KEY,
+          // DQS SERVFAIL/REFUSED means a bad key or delegation, not a blip —
+          // don't retry it, and let the client's error breaker cut it off.
+          resolver: new DohResolver({ retries: 1, timeoutMs: 2500 }),
+          cache: store,
+          budget: store,
+          dailyCeiling: intOr(env.DQS_DAILY_CEILING, 200_000),
+        })
+      : null;
+
     const run = runDueChecks({
-      store: new D1Store(env.DB),
+      store,
       check: checkDomain,
       now: () => new Date(),
       batchLimit: intOr(env.CRON_BATCH_LIMIT, CRON_BATCH_LIMIT),
       maxDkimProbes: MAX_DKIM_PROBES,
       jitterFraction: 0.1,
       makeResolver: () => new DohResolver({ retries: 2, timeoutMs: 3000 }),
+      ...(dqs
+        ? {
+            blacklist: async ({ domainId, domain, spfIpTerms }) => {
+              // Persist at most 20 SPF-derived IPs as evidence; the check
+              // itself caps how many are actually queried.
+              const ips = spfIpTerms
+                .filter(isIndividualIp)
+                .map((t) => t.split("/")[0]!)
+                .slice(0, 20);
+              if (ips.length > 0) {
+                await store.upsertSendingIps(
+                  domainId,
+                  ips,
+                  "spf",
+                  new Date().toISOString(),
+                );
+              }
+              const all = await store.getSendingIps(domainId);
+              return evaluateBlacklist(domain, all, dqs);
+            },
+            rescore: (checks) => {
+              const s = scoreReport(checks);
+              return { score: s.score, grade: s.grade, readiness: s.readiness };
+            },
+          }
+        : {}),
     }).then((s) => console.log("scheduled", JSON.stringify(s)));
 
     ctx.waitUntil(run);

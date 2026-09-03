@@ -30,6 +30,8 @@ interface State {
   sawMacro: boolean;
   ip4: number;
   ip6: number;
+  /** Raw ip4:/ip6: mechanism values across the record and its includes. */
+  ipTerms: string[];
   sawIncludeOrRedirect: boolean;
   limitHit: boolean;
 }
@@ -54,6 +56,7 @@ export async function evaluateSpf(
     sawMacro: false,
     ip4: 0,
     ip6: 0,
+    ipTerms: [],
     sawIncludeOrRedirect: false,
     limitHit: false,
   };
@@ -178,6 +181,7 @@ export async function evaluateSpf(
     all: rec.all ?? null,
     redirect: rec.redirect ?? null,
     chain: state.chain,
+    ipTerms: state.ipTerms,
   });
 }
 
@@ -339,9 +343,11 @@ async function processTerms(record: string, state: State): Promise<ParsedRecord>
 
       case "ip4":
         state.ip4++;
+        if (value) state.ipTerms.push(value);
         break;
       case "ip6":
         state.ip6++;
+        if (value) state.ipTerms.push(value);
         break;
 
       default:
