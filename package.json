@@ -1,0 +1,47 @@
+{
+  "name": "coldwatch",
+  "version": "0.0.1",
+  "description": "Deliverability infrastructure health checks for cold-email sending domains (SPF, DMARC, DKIM, MX).",
+  "type": "module",
+  "bin": {
+    "coldwatch": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "worker"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && npm run test"
+  },
+  "keywords": [
+    "cold-email",
+    "deliverability",
+    "spf",
+    "dmarc",
+    "dkim",
+    "email-authentication",
+    "dns"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "tldts": "^6.1.85"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

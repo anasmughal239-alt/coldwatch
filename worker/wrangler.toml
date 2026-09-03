@@ -1,0 +1,17 @@
+name = "coldwatch-web"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+workers_dev = true
+
+# Where the "Monitor all your domains" button points. Set this to your
+# waitlist form (Tally, Formspree, a Google Form...) after deploy:
+#   npx wrangler deploy --var WAITLIST_URL:https://tally.so/r/xxxx
+[vars]
+WAITLIST_URL = ""
+
+# Optional: a KV namespace to capture waitlist emails posted to /api/waitlist.
+# Create it, then uncomment:
+#   npx wrangler kv namespace create WAITLIST
+# [[kv_namespaces]]
+# binding = "WAITLIST"
+# id = "<id printed by the command above>"

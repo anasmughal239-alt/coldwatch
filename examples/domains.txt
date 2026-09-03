@@ -1,0 +1,5 @@
+# One domain per line. Blank lines and lines starting with # are ignored.
+# Run:  coldwatch --file examples/domains.txt
+stripe.com
+github.com
+cloudflare.com

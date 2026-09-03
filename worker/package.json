@@ -1,0 +1,22 @@
+{
+  "name": "coldwatch-web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Free public single-domain deliverability checker (Cloudflare Worker).",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tldts": "^6.1.85"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250121.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.107.0"
+  }
+}
