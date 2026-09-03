@@ -57,3 +57,55 @@ POSTs to `/api/waitlist` and writes `email:<addr>` into the namespace.
 `MAX_DKIM_PROBES = 14` keeps total DNS subrequests per check well under the
 Workers free-plan cap of 50. The DoH resolver is configured with a 3s timeout
 and 2 retries so a slow chain can't hang the request.
+
+---
+
+## M2 — continuous monitoring (D1 + Cron)
+
+A `scheduled()` handler runs every 10 minutes, checks whichever domains are
+due, and stores an append-only history plus a derived current-state row per
+check. All native Cloudflare, still free.
+
+### One-time setup
+
+```
+npx wrangler d1 create coldwatch
+#   -> paste database_id into wrangler.toml
+npx wrangler d1 migrations apply coldwatch --remote
+npx wrangler secret put CW_ADMIN_TOKEN        # any long random string
+npm run deploy
+```
+
+For local dev, put `CW_ADMIN_TOKEN=devtoken` in `worker/.dev.vars`, then
+`npx wrangler d1 migrations apply coldwatch --local` and
+`npm run dev -- --test-scheduled` (invoke the cron with
+`curl localhost:8787/__scheduled`).
+
+### Admin API (Bearer `CW_ADMIN_TOKEN`)
+
+| | |
+|---|---|
+| `POST /api/domains` | `{ "domain": "acme.com", "label"?, "dkimSelectors"?: [], "checkIntervalSeconds"?: 21600 }` |
+| `GET /api/domains` | all monitored domains + last-run summary |
+| `GET /api/domains/:domain` | detail incl. per-check state |
+| `DELETE /api/domains/:domain` | stop monitoring |
+| `GET /api/domains/:domain/history?limit=50` | recent runs |
+
+```
+curl -X POST https://coldwatch-web.<you>.workers.dev/api/domains \
+  -H "authorization: Bearer $CW_ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"domain":"acme.com"}'
+```
+
+### Capacity
+
+8 domains per cron fire × every 10 min ≈ **1,150 domain-checks/day**. Enough
+for validation. Past that, the scheduler fans out via self-`fetch` (one
+sub-invocation per domain) — a config change, not a rewrite.
+
+### Data model
+
+`domain` → `check_run` (one per time-slot, `UNIQUE(domain_id, slot_ts)` =
+idempotency) → `check_result` (append-only) · `domain_check_state` (current
+status per check, `since` / `consecutive_count` feed M4 alerting).

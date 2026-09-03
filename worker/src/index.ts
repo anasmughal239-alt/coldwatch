@@ -13,17 +13,24 @@
 
 import { checkDomain, DohResolver } from "../../src/index.js";
 import type { DomainReport } from "../../src/index.js";
+import { handleAdmin } from "./admin.js";
 import { renderPage } from "./page.js";
 import { renderReport } from "./render.js";
+import { runDueChecks } from "./scheduler.js";
+import { D1Store } from "./store.js";
 import { isEmail, normalizeDomainInput } from "./validate.js";
 
 interface Env {
   WAITLIST_URL?: string;
   WAITLIST?: KVNamespace;
+  DB?: D1Database;
+  CW_ADMIN_TOKEN?: string;
+  CRON_BATCH_LIMIT?: string;
 }
 
 const CACHE_TTL = 3600; // seconds
 const MAX_DKIM_PROBES = 14; // keep total subrequests well under the free-plan cap
+const CRON_BATCH_LIMIT = 8; // domains per cron fire (~24 DNS subrequests)
 
 const HTML_HEADERS: Record<string, string> = {
   "content-type": "text/html; charset=utf-8",
@@ -40,6 +47,11 @@ export default {
       return new Response("ok", { headers: { "content-type": "text/plain" } });
     }
 
+    if (url.pathname === "/api/domains" || url.pathname.startsWith("/api/domains/")) {
+      const res = await handleAdmin(req, url, env);
+      if (res) return res;
+    }
+
     if (url.pathname === "/api/check") {
       return handleApiCheck(url, ctx);
     }
@@ -54,7 +66,36 @@ export default {
 
     return new Response("Not found", { status: 404 });
   },
+
+  /** Cron trigger: run checks for whichever domains are due. */
+  async scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    if (!env.DB) {
+      console.warn("scheduled: DB not bound, nothing to do");
+      return;
+    }
+    const run = runDueChecks({
+      store: new D1Store(env.DB),
+      check: checkDomain,
+      now: () => new Date(),
+      batchLimit: intOr(env.CRON_BATCH_LIMIT, CRON_BATCH_LIMIT),
+      maxDkimProbes: MAX_DKIM_PROBES,
+      jitterFraction: 0.1,
+      makeResolver: () => new DohResolver({ retries: 2, timeoutMs: 3000 }),
+    }).then((s) => console.log("scheduled", JSON.stringify(s)));
+
+    ctx.waitUntil(run);
+    await run;
+  },
 };
+
+function intOr(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+}
 
 async function handlePage(
   url: URL,

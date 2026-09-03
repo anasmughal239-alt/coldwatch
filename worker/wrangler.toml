@@ -3,15 +3,32 @@ main = "src/index.ts"
 compatibility_date = "2025-01-15"
 workers_dev = true
 
-# Where the "Monitor all your domains" button points. Set this to your
-# waitlist form (Tally, Formspree, a Google Form...) after deploy:
-#   npx wrangler deploy --var WAITLIST_URL:https://tally.so/r/xxxx
 [vars]
+# Where the "Join the waitlist" button points (Tally, Formspree, a Google Form).
+# Override at deploy: npx wrangler deploy --var WAITLIST_URL:https://tally.so/r/xxxx
 WAITLIST_URL = ""
+# Domains checked per cron fire. 8 ~= 24 DNS subrequests, well under the
+# free-plan cap of 50.
+CRON_BATCH_LIMIT = "8"
 
-# Optional: a KV namespace to capture waitlist emails posted to /api/waitlist.
-# Create it, then uncomment:
+# Cron trigger for the scheduler (scheduled() handler). Every 10 minutes.
+[triggers]
+crons = ["*/10 * * * *"]
+
+# D1 database. Create it once, then paste the id:
+#   npx wrangler d1 create coldwatch
+#   npx wrangler d1 migrations apply coldwatch --local     # for `wrangler dev`
+#   npx wrangler d1 migrations apply coldwatch --remote    # for production
+[[d1_databases]]
+binding = "DB"
+database_name = "coldwatch"
+database_id = "REPLACE_WITH_ID_FROM_d1_create"
+
+# Admin API token — set as a secret, never a plain var:
+#   npx wrangler secret put CW_ADMIN_TOKEN
+#
+# Optional: KV namespace to capture waitlist emails posted to /api/waitlist:
 #   npx wrangler kv namespace create WAITLIST
 # [[kv_namespaces]]
 # binding = "WAITLIST"
-# id = "<id printed by the command above>"
+# id = "<id from the command above>"
