@@ -14,7 +14,12 @@ const PENALTY: Record<Severity, number> = {
   ok: 0,
 };
 
-export type Readiness = "ready" | "at-risk" | "not-ready";
+/**
+ * `unverified` means a required lookup (SPF, DMARC or MX) failed, so the domain
+ * could not be fully evaluated. It never counts as a pass: a DNS outage must not
+ * look like a healthy domain in CI.
+ */
+export type Readiness = "ready" | "at-risk" | "not-ready" | "unverified";
 
 export interface ScoredReport {
   score: number;
@@ -43,8 +48,17 @@ export function scoreReport(checks: CheckResult[]): ScoredReport {
     spf?.findings.some((f) => f.code === "spf.missing") ||
     dmarc?.findings.some((f) => f.code === "dmarc.missing");
 
+  const lookupFailed = checks.some(
+    (c) =>
+      c.check !== "dkim" &&
+      c.findings.some(
+        (f) => f.code.endsWith(".lookup_error") || f.code === "run.error",
+      ),
+  );
+
   let readiness: Readiness;
   if (hasCrit || authBroken) readiness = "not-ready";
+  else if (lookupFailed) readiness = "unverified";
   else if (checks.some((c) => c.status === "warn" || c.status === "unknown"))
     readiness = "at-risk";
   else readiness = "ready";

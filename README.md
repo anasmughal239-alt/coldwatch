@@ -8,6 +8,7 @@ is broken — so it drops straight into CI or a cron job.
 No API keys. No account. Every lookup is DNS-over-HTTPS.
 
 ```
+npm install -g coldwatch     # or run it ad hoc with npx
 npx coldwatch stripe.com
 npx coldwatch --file domains.txt --json
 npx coldwatch acme.com --selector mailo --fail-on warn
@@ -36,8 +37,14 @@ acme.com  C · 62/100 · at-risk
 
 ## Exit codes
 
-`0` every domain meets the threshold · `1` at least one domain is below it
-(`--fail-on crit` by default, `--fail-on warn` to be strict) · `2` usage error.
+| Code | Meaning |
+|---|---|
+| `0` | every domain meets the threshold |
+| `1` | at least one domain is below it (`--fail-on crit` by default, `--fail-on warn` to be strict) |
+| `2` | usage error |
+| `3` | at least one domain could not be fully checked: its SPF, DMARC or MX lookup failed, so it is reported as `unverified` rather than passed |
+
+`1` takes precedence over `3`.
 
 ## Library
 
@@ -46,6 +53,7 @@ import { checkDomain } from "coldwatch";
 
 const report = await checkDomain("stripe.com");
 // { domain, score, grade, readiness, checks: [{ check, status, findings, data }] }
+// readiness: "ready" | "at-risk" | "not-ready" | "unverified"
 ```
 
 Inject a resolver to point at other DoH endpoints or to test offline:
