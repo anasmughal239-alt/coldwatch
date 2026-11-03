@@ -27,6 +27,9 @@ jobs:
         run: |
           v="v$(node -p "require('./package.json').version")"
           [ "$v" = "${{ github.event.release.tag_name }}" ] || { echo "tag ${{ github.event.release.tag_name }} != $v"; exit 1; }
+      - run: npm run build
+      - name: Live smoke test
+        run: node scripts/smoke.mjs
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -20,6 +20,19 @@ jobs:
       - run: npm --workspace worker run typecheck
       - run: npm --workspace worker test
 
+  smoke:
+    # Real DNS-over-HTTPS lookups against live domains.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/smoke.mjs stripe.com google.com github.com
+
   deploy-worker:
     needs: check
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
