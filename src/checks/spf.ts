@@ -156,6 +156,19 @@ export async function evaluateSpf(
     });
   }
 
+  // At 9-10 lookups the record still passes, but the next tool added (most
+  // include 2-4 lookups) will push it over the limit and break SPF silently.
+  if (state.lookups >= MAX_LOOKUPS - 1 && state.lookups <= MAX_LOOKUPS) {
+    state.findings.push({
+      code: "spf.near_lookup_limit",
+      severity: "warn",
+      title: `SPF is at ${state.lookups}/${MAX_LOOKUPS} DNS lookups`,
+      detail:
+        "It passes today, but adding one more sending tool will push it over the limit and break SPF for every message.",
+      fix: "Remove includes for tools you no longer use, or flatten the record, before adding another sender.",
+    });
+  }
+
   if (state.sawMacro) {
     state.findings.push({
       code: "spf.uses_macros",
@@ -265,7 +278,13 @@ async function processTerms(record: string, state: State): Promise<ParsedRecord>
   const terms = record.trim().split(/\s+/).slice(1); // drop "v=spf1"
 
   for (const term of terms) {
-    if (state.limitHit) break;
+    if (state.limitHit) {
+      // Past the lookup limit: do no more DNS work, but still read this
+      // record's `all` so we don't misreport it as missing.
+      const allTerm = /^([+\-~?]?)all$/i.exec(term);
+      if (allTerm) parsed.all = (allTerm[1] || "+") as "+" | "-" | "~" | "?";
+      continue;
+    }
     if (term.includes("%{")) state.sawMacro = true;
 
     // Modifiers contain "=" and take no qualifier.
