@@ -10,9 +10,10 @@ let out;
 try {
   out = execFileSync("node", ["dist/cli.js", ...domains, "--json"], { encoding: "utf8" });
 } catch (err) {
-  // Exit 1 (a domain below threshold) is a valid result for a smoke test.
-  if (err.status !== 1) {
-    console.error(err.stdout || err.message);
+  // 1 (below threshold) and 3 (unverified) still print a JSON report;
+  // the unverified case is flagged per domain below.
+  if (err.status !== 1 && err.status !== 3) {
+    console.error(err.stderr || err.message);
     console.log(`::error::coldwatch exited ${err.status}`);
     process.exit(1);
   }
