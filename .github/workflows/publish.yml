@@ -1,0 +1,32 @@
+name: publish
+
+# Publishes to npm when a GitHub release is published (tag like v0.1.0).
+# Requires repo secret NPM_TOKEN (an npm "Automation" or granular publish token).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - name: Check tag matches package.json version
+        if: github.event_name == 'release'
+        run: |
+          v="v$(node -p "require('./package.json').version")"
+          [ "$v" = "${{ github.event.release.tag_name }}" ] || { echo "tag ${{ github.event.release.tag_name }} != $v"; exit 1; }
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -142,11 +142,11 @@ function renderReport(report: DomainReport, quiet: boolean): string {
         : c.red;
 
   lines.push("");
-  lines.push(
-    `${c.bold(report.domain)}  ${gradeColor(
-      `${report.grade} · ${report.score}/100 · ${report.readiness}`,
-    )}`,
-  );
+  const headline =
+    report.readiness === "unverified"
+      ? c.yellow("? · unverified — some DNS lookups failed, re-run to get a score")
+      : gradeColor(`${report.grade} · ${report.score}/100 · ${report.readiness}`);
+  lines.push(`${c.bold(report.domain)}  ${headline}`);
 
   for (const check of report.checks) {
     const shown = quiet
@@ -184,7 +184,7 @@ async function main(): Promise<void> {
         checkedAt: new Date().toISOString(),
         score: 0,
         grade: "F",
-        readiness: "not-ready",
+        readiness: "unverified",
         checks: [
           {
             check: "spf",
@@ -224,6 +224,19 @@ async function main(): Promise<void> {
         ),
       );
     process.exit(1);
+  }
+
+  const unverified = reports.filter((r) => r.readiness === "unverified");
+  if (unverified.length > 0) {
+    if (!cli.json)
+      process.stderr.write(
+        c.yellow(
+          `${unverified.length}/${reports.length} domain(s) could not be fully checked (DNS lookups failed): ${unverified
+            .map((r) => r.domain)
+            .join(", ")}\n`,
+        ),
+      );
+    process.exit(3);
   }
 }
 

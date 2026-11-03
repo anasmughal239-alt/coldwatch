@@ -1,7 +1,15 @@
 {
   "name": "coldwatch",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Deliverability infrastructure health checks for cold-email sending domains (SPF, DMARC, DKIM, MX).",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anasmughal239-alt/coldwatch.git"
+  },
+  "homepage": "https://github.com/anasmughal239-alt/coldwatch#readme",
+  "bugs": {
+    "url": "https://github.com/anasmughal239-alt/coldwatch/issues"
+  },
   "type": "module",
   "bin": {
     "coldwatch": "./dist/cli.js"
@@ -9,7 +17,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map"
   ],
   "engines": {
     "node": ">=20"
@@ -23,7 +32,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json",
-    "check": "npm run typecheck && npm run test"
+    "check": "npm run typecheck && npm run test",
+    "prepublishOnly": "npm run check && rm -rf dist && npm run build"
   },
   "keywords": [
     "cold-email",
@@ -32,7 +42,9 @@
     "dmarc",
     "dkim",
     "email-authentication",
-    "dns"
+    "dns",
+    "email-deliverability",
+    "cli"
   ],
   "license": "MIT",
   "dependencies": {
@@ -43,5 +55,12 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   }
 }
