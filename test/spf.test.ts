@@ -109,4 +109,29 @@ describe("evaluateSpf", () => {
     expect(r.status).toBe("unknown");
     expect(codes(r)).toContain("spf.lookup_error");
   });
+
+  const withIncludes = (n: number) => {
+    const dns = new MockResolver().txt(
+      "example.com",
+      `v=spf1 ${Array.from({ length: n }, (_, i) => `include:i${i}.example.net`).join(" ")} ~all`,
+    );
+    for (let i = 0; i < n; i++) dns.txt(`i${i}.example.net`, "v=spf1 ip4:192.0.2.1 -all");
+    return dns;
+  };
+
+  it("warns when SPF is at 9 or 10 of 10 lookups", async () => {
+    for (const n of [9, 10]) {
+      const r = await evaluateSpf("example.com", withIncludes(n));
+      expect(r.status).toBe("warn");
+      expect(codes(r)).toContain("spf.near_lookup_limit");
+    }
+    const ok = await evaluateSpf("example.com", withIncludes(8));
+    expect(codes(ok)).toEqual(["spf.ok"]);
+  });
+
+  it("does not report a missing `all` when evaluation stops at the lookup limit", async () => {
+    const r = await evaluateSpf("example.com", withIncludes(11));
+    expect(codes(r)).toContain("spf.too_many_lookups");
+    expect(codes(r)).not.toContain("spf.no_all");
+  });
 });
